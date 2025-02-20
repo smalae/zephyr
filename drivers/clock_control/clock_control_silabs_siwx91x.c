@@ -64,6 +64,10 @@ static int siwx91x_clock_on(const struct device *dev, clock_control_subsys_t sys
 		RSI_PS_M4ssPeriPowerUp(M4SS_PWRGATE_ULP_EFUSE_PERI);
 		RSI_CLK_PeripheralClkEnable(M4CLK, UDMA_CLK, ENABLE_STATIC_CLK);
 		break;
+	case SIWX91X_CLK_PWM:
+		RSI_PS_M4ssPeriPowerUp(M4SS_PWRGATE_ULP_EFUSE_PERI);
+		RSI_CLK_PeripheralClkEnable(M4CLK, PWM_CLK, ENABLE_STATIC_CLK);
+		break;
 	default:
 		return -EINVAL;
 	}
