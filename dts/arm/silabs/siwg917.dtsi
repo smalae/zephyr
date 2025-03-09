@@ -261,6 +261,17 @@
 			dma-channels = <12>;
 			status = "disabled";
 		};
+
+		gspi: gspi@45030000 {
+			compatible = "silabs,siwx91x-gspi-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x45030000 0xBC>;
+			interrupts = <46 0>;
+			interrupt-names = "gspi";
+			clocks = <&clock0 SIWX91X_CLK_GSPI>;
+			status = "disabled";
+		};
 	};
 };
 

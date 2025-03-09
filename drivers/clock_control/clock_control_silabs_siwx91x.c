@@ -12,6 +12,7 @@
 #include "rsi_power_save.h"
 #include "rsi_rom_ulpss_clk.h"
 #include "rsi_rom_clks.h"
+#include "rsi_pll.h"
 #include "clock_update.h"
 #include "sl_si91x_clock_manager.h"
 
@@ -63,6 +64,11 @@ static int siwx91x_clock_on(const struct device *dev, clock_control_subsys_t sys
 	case SIWX91X_CLK_DMA0:
 		RSI_PS_M4ssPeriPowerUp(M4SS_PWRGATE_ULP_EFUSE_PERI);
 		RSI_CLK_PeripheralClkEnable(M4CLK, UDMA_CLK, ENABLE_STATIC_CLK);
+		break;
+	case SIWX91X_CLK_GSPI:
+		RSI_PS_M4ssPeriPowerUp(M4SS_PWRGATE_ULP_EFUSE_PERI);
+		RSI_CLK_PeripheralClkEnable3(M4CLK, M4_SOC_CLK_FOR_OTHER_ENABLE);
+		RSI_CLK_GspiClkConfig(M4CLK, GSPI_INTF_PLL_CLK);
 		break;
 	default:
 		return -EINVAL;

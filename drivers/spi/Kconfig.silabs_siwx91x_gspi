@@ -1,0 +1,21 @@
+# Copyright (c) 2025 Silicon Laboratories Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config SPI_SILABS_SIWX91X_GSPI
+	bool "Silabs GSPI SPI Primary controller driver"
+	default y
+	depends on DT_HAS_SILABS_SIWX91X_GSPI_ENABLED
+	select PINCTRL
+	help
+	  Enable the GSPI SPI primary driver for the Silabs SiWx91x SoC series.
+
+if SPI_SILABS_SIWX91X_GSPI
+
+config SPI_SILABS_SIWX91X_GSPI_DMA
+	bool "SIWX91X MCU GSPI DMA Support"
+	select DMA
+	select CACHE_MANAGEMENT if CPU_HAS_DCACHE
+	help
+	  Enable DMA support for SIWX91X MCU GSPI driver.
+
+endif #SPI_SILABS_SIWX91X_GSPI
