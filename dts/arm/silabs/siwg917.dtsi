@@ -262,8 +262,8 @@
 			status = "disabled";
 		};
 
-		gspi: gspi@45030000 {
-			compatible = "silabs,siwx91x-gspi-spi";
+		gspi: spi@45030000 {
+			compatible = "silabs,siwx91x-gspi";
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x45030000 0xBC>;
