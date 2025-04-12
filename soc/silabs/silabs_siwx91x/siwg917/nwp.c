@@ -165,6 +165,10 @@ static int siwg917_nwp_init(void)
 {
 	sl_wifi_device_configuration_t network_config;
 	sl_status_t status;
+	sl_wifi_performance_profile_t performance_profile = { .profile = DEEP_SLEEP_WITH_RAM_RETENTION };
+	sl_mac_address_t mac_addr                         = { 0 };
+	sl_wifi_firmware_version_t version                = { 0 };
+	
 	
 	IRQ_CONNECT(74, 3, IRQ074_Handler, 0, 0);
 	irq_enable(74);
@@ -175,9 +179,37 @@ static int siwg917_nwp_init(void)
 	 */
 	status = sl_wifi_init(&network_config, NULL, sl_wifi_default_event_handler);
 	if (status != SL_STATUS_OK) {
+		printf("Wifi init error\n");
 		return -EINVAL;
 	}
-
+	status = sl_wifi_get_firmware_version(&version);
+  	if (status != SL_STATUS_OK) {
+    		printf("Failed to fetch firmware version: 0x%lx\r\n", status);
+    		return -EINVAL;
+  	} else {
+    		print_firmware_version(&version);
+  	}
+#if 0
+	status = sl_wifi_get_mac_address(SL_WIFI_CLIENT_INTERFACE, &mac_addr);
+	if (status != SL_STATUS_OK) {
+		printf("get mac addr error:%x\n", status);
+		
+		return -EINVAL;
+	}
+	   printf("Device MAC address: %x:%x:%x:%x:%x:%x\r\n",
+           mac_addr.octet[0],
+           mac_addr.octet[1],
+           mac_addr.octet[2],
+           mac_addr.octet[3],
+           mac_addr.octet[4],
+           mac_addr.octet[5]);
+#endif
+	status = sl_wifi_set_performance_profile(&performance_profile);
+	if (status != SL_STATUS_OK) {
+		printf("performance profile error\n");
+		return -EINVAL;
+	}
+	printf("NWP init success\n");
 	return 0;
 }
 SYS_INIT(siwg917_nwp_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
