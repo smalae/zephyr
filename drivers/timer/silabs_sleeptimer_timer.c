@@ -121,9 +121,9 @@ static int sleeptimer_init(void)
 	sl_status_t status = SL_STATUS_OK;
 	struct sleeptimer_timer_data *timer = &g_sleeptimer_timer_data;
 
-	IRQ_CONNECT(DT_IRQ(DT_RTC, irq), DT_IRQ(DT_RTC, priority),
+	IRQ_DIRECT_CONNECT(DT_IRQ(DT_RTC, irq), DT_IRQ(DT_RTC, priority),
 		    CONCAT(DT_STRING_UPPER_TOKEN_BY_IDX(DT_RTC, interrupt_names, 0), _IRQHandler),
-		    0, 0);
+		    0);
 
 	sl_sleeptimer_init();
 
