@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
+#ifdef CONFIG_PM
+#include "sl_si91x_power_manager.h"
+#endif
 
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME_MS   1000
@@ -33,7 +36,8 @@ int main(void)
 	if (ret < 0) {
 		return 0;
 	}
-
+	/* Remove the previously added PS4 power state requirement */
+	sl_si91x_power_manager_remove_ps_requirement(SL_SI91X_POWER_MANAGER_PS4);
 	while (1) {
 		ret = gpio_pin_toggle_dt(&led);
 		if (ret < 0) {

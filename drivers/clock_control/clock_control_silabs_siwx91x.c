@@ -15,6 +15,12 @@
 #include "rsi_sysrtc.h"
 #include "clock_update.h"
 #include "sl_si91x_clock_manager.h"
+#ifdef CONFIG_WISECONNECT_NETWORK_STACK
+#include "sli_siwx917_soc.h"
+#endif
+#ifdef CONFIG_PM
+#include "sl_si91x_power_manager.h"
+#endif
 
 #define DT_DRV_COMPAT silabs_siwx91x_clock
 #define DT_DRV_COMPAT          silabs_siwx91x_clock
@@ -162,14 +168,28 @@ static enum clock_control_status siwx91x_clock_get_status(const struct device *d
 
 static int siwx91x_clock_init(const struct device *dev)
 {
+#ifdef CONFIG_PM
+	sl_power_peripheral_t peripheral_config = {0};
+	sl_power_ram_retention_config_t ram_configuration = {
+		.configure_ram_banks = false,
+		.m4ss_ram_size_kb = 256,
+		.ulpss_ram_size_kb = 4,
+	};
+#endif
 	SystemCoreClockUpdate();
 
+#if 0
 	/* Use SoC PLL at configured frequency as core clock */
 	sl_si91x_clock_manager_m4_set_core_clk(M4_SOCPLLCLK, CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
 
 	/* Use interface PLL at configured frequency as peripheral clock */
 	sl_si91x_clock_manager_set_pll_freq(INFT_PLL, CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,
 					    PLL_REF_CLK_VAL_XTAL);
+#endif
+  RSI_CLK_M4ssRefClkConfig(M4CLK, EXT_40MHZ_CLK);
+  RSI_ULPSS_RefClkConfig(ULPSS_40MHZ_CLK);
+  
+  sl_si91x_clock_manager_m4_set_core_clk(M4_SOCPLLCLK, CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
 
 	/* FIXME: Currently the clock consumer use clocks without power on them.
 	 * This should be fixed in drivers. Meanwhile, get the list of required
@@ -185,6 +205,24 @@ static int siwx91x_clock_init(const struct device *dev)
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
 	siwx91x_clock_on(dev, (clock_control_subsys_t)SIWX91X_CLK_I2C1);
+#endif
+
+#ifdef CONFIG_PM
+	sli_si91x_platform_init();
+	/* Initialize the power manager */
+	sl_si91x_power_manager_init();
+
+	/* Remove peripheral requirements */
+	sl_si91x_power_manager_remove_peripheral_requirement(&peripheral_config);
+
+	/* Configure RAM retention settings */
+	sl_si91x_power_manager_configure_ram_retention(&ram_configuration);
+
+	/* Add a power state requirement for PS4 */
+	sl_si91x_power_manager_add_ps_requirement(SL_SI91X_POWER_MANAGER_PS4);
+
+	/* Set the clock scaling to performance mode */
+	sl_si91x_power_manager_set_clock_scaling(SL_SI91X_POWER_MANAGER_PERFORMANCE);
 #endif
 
 	return 0;

@@ -19,11 +19,14 @@
 #ifdef CONFIG_BT_SILABS_SIWX91X
 #include "rsi_ble_common_config.h"
 #endif
+#ifdef CONFIG_PM
+#include "sl_si91x_power_manager.h"
+#endif
 
 LOG_MODULE_REGISTER(siwx91x_nwp);
 
 BUILD_ASSERT(DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(196) ||
-	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(256) ||
+	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(255) ||
 	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(320));
 
 int siwg91x_get_nwp_config(int wifi_oper_mode, sl_wifi_device_configuration_t *get_config)
@@ -45,7 +48,7 @@ int siwg91x_get_nwp_config(int wifi_oper_mode, sl_wifi_device_configuration_t *g
 
 	if (DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(196)) {
 		boot_config->ext_custom_feature_bit_map |= SL_SI91X_EXT_FEAT_480K_M4SS_192K;
-	} else if (DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(256)) {
+	} else if (DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(255)) {
 		boot_config->ext_custom_feature_bit_map |= SL_SI91X_EXT_FEAT_416K_M4SS_256K;
 	} else if (DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(320)) {
 		boot_config->ext_custom_feature_bit_map |= SL_SI91X_EXT_FEAT_352K_M4SS_320K;
@@ -146,7 +149,6 @@ int siwg91x_get_nwp_config(int wifi_oper_mode, sl_wifi_device_configuration_t *g
 	memcpy(get_config, &default_config, sizeof(default_config));
 	return 0;
 }
-
 int siwx91x_nwp_mode_switch(uint8_t oper_mode)
 {
 	sl_wifi_device_configuration_t nwp_config;
@@ -181,7 +183,10 @@ static int siwg917_nwp_init(void)
 {
 	sl_wifi_device_configuration_t network_config;
 	sl_status_t status;
-
+#ifdef CONFIG_PM
+	sl_wifi_performance_profile_t performance_profile = {.profile =
+		DEEP_SLEEP_WITH_RAM_RETENTION};
+#endif
 	siwg91x_get_nwp_config(SL_SI91X_CLIENT_MODE, &network_config);
 	/* TODO: If sl_net_*_profile() functions will be needed for WiFi then call
 	 * sl_net_set_profile() here. Currently these are unused.
@@ -190,6 +195,17 @@ static int siwg917_nwp_init(void)
 	if (status != SL_STATUS_OK) {
 		return -EINVAL;
 	}
+	printf("nwp init success\n");
+#ifdef CONFIG_PM
+	status = sl_wifi_set_performance_profile(&performance_profile);
+	if (status != SL_STATUS_OK) {
+
+		return -EINVAL;
+	}
+	printf("per profile success\n");
+	/* Remove the previously added PS4 power state requirement */
+	//sl_si91x_power_manager_remove_ps_requirement(SL_SI91X_POWER_MANAGER_PS4);
+#endif
 
 	return 0;
 }
