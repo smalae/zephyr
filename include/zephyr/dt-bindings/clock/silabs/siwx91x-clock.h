@@ -17,5 +17,6 @@
 #define SIWX91X_CLK_GSPI         10
 #define SIWX91X_CLK_QSPI         11
 #define SIWX91X_CLK_RTC          12
+#define SIWX91X_ADC_CLK          17
 
 #endif

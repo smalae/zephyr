@@ -351,6 +351,17 @@
 			clocks = <&clock0 SIWX91X_CLK_GSPI>;
 			status = "disabled";
 		};
+
+		adc0: adc@24043800 {
+			compatible = "silabs,siwx91x-adc";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x24043800 0x214>;
+			interrupts = <11 0>;
+			interrupt-names = "adc0";
+			clocks = <&clock0 SIWX91X_ADC_CLK>;
+			status = "disabled";
+		};
 	};
 };
 

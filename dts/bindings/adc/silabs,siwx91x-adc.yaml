@@ -1,0 +1,21 @@
+description: Silicon Labs siwx91x ADC
+
+compatible: "silabs,siwx91x-adc"
+
+include: adc-controller.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  silabs,adc-ref-voltage:
+    type: int
+    description: |
+        ADC reference volatge in mv. This voltage is common for all
+        the channels.
+        min value - 1800
+        max value - 3600
+    required: true
