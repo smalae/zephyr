@@ -1,0 +1,22 @@
+description: Silabs SiWx91x GPDMA
+
+compatible: "silabs,siwx91x-gpdma"
+
+include: dma-controller.yaml
+
+properties:
+  reg:
+    required: true
+
+  silabs,channel-reg-base:
+    type: int
+    const: 0x21081004
+    description: |
+        Base address for channel specific registers.
+
+  "#dma-cells":
+    const: 1
+
+# Parameter syntax
+dma-cells:
+  - channel

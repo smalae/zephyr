@@ -5,9 +5,9 @@
  */
 / {
 	aliases {
-		dma0 = &dma0;
+		dma0 = &gpdma0;
 	};
 };
-&dma0 {
+&gpdma0 {
 	status = "okay";
 };
