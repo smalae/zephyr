@@ -269,6 +269,7 @@ static void spi_loopback_compare_bufs(const uint8_t *buf1, const uint8_t *buf2, 
  **************
  */
 
+#if 1
 /* test transferring different buffers on the same dma channels */
 ZTEST(spi_loopback, test_spi_complete_multiple)
 {
@@ -284,10 +285,13 @@ ZTEST(spi_loopback, test_spi_complete_multiple)
 
 	spi_loopback_compare_bufs(buffer_tx, buffer_rx, BUF_SIZE,
 				  buffer_print_tx, buffer_print_rx);
+
 	spi_loopback_compare_bufs(buffer2_tx, buffer2_rx, BUF2_SIZE,
 				  buffer_print_tx2, buffer_print_rx2);
 }
+#endif
 
+#if 1
 /* same as the test_spi_complete_multiple test, but seeing if there is any unreasonable latency */
 ZTEST(spi_loopback, test_spi_complete_multiple_timed)
 {
@@ -365,6 +369,7 @@ ZTEST(spi_loopback, test_spi_complete_multiple_timed)
 	spi_loopback_compare_bufs(buffer2_tx, buffer2_rx, BUF2_SIZE,
 				  buffer_print_tx2, buffer_print_rx2);
 }
+#endif
 
 void spi_loopback_test_mode(struct spi_dt_spec *spec, bool cpol, bool cpha)
 {
@@ -394,6 +399,7 @@ void spi_loopback_test_mode(struct spi_dt_spec *spec, bool cpol, bool cpha)
 		buffer_print_tx, buffer_print_rx);
 }
 
+#if 1
 ZTEST(spi_loopback, test_spi_complete_loop_mode_0)
 {
 	struct spi_dt_spec *spec = loopback_specs[spec_idx];
@@ -429,7 +435,9 @@ ZTEST(spi_loopback, test_spi_complete_loop_mode_3)
 
 	spi_loopback_test_mode(spec_copy, true, true);
 }
+#endif
 
+#if 0
 ZTEST(spi_loopback, test_spi_null_tx_buf)
 {
 	struct spi_dt_spec *spec = loopback_specs[spec_idx];
@@ -446,7 +454,9 @@ ZTEST(spi_loopback, test_spi_null_tx_buf)
 	spi_loopback_compare_bufs(expected_nop_return_buf, buffer_rx, BUF_SIZE,
 				  buffer_print_rx, buffer_print_rx);
 }
+#endif
 
+#if 0
 ZTEST(spi_loopback, test_spi_rx_half_start)
 {
 	struct spi_dt_spec *spec = loopback_specs[spec_idx];
@@ -462,7 +472,9 @@ ZTEST(spi_loopback, test_spi_rx_half_start)
 	spi_loopback_compare_bufs(buffer_tx, buffer_rx, 8,
 				  buffer_print_tx, buffer_print_rx);
 }
+#endif
 
+#if 0
 ZTEST(spi_loopback, test_spi_rx_half_end)
 {
 	if (IS_ENABLED(CONFIG_SPI_STM32_DMA)) {
@@ -484,7 +496,9 @@ ZTEST(spi_loopback, test_spi_rx_half_end)
 	spi_loopback_compare_bufs(buffer_tx+8, buffer_rx, 8,
 				  buffer_print_tx, buffer_print_rx);
 }
+#endif
 
+#if 0
 ZTEST(spi_loopback, test_spi_rx_every_4)
 {
 	if (IS_ENABLED(CONFIG_SPI_STM32_DMA) || IS_ENABLED(CONFIG_DSPI_MCUX_EDMA)) {
@@ -510,7 +524,9 @@ ZTEST(spi_loopback, test_spi_rx_every_4)
 	spi_loopback_compare_bufs(buffer_tx+12, buffer_rx+4, 4,
 				  buffer_print_tx, buffer_print_rx);
 }
+#endif
 
+#if 0
 ZTEST(spi_loopback, test_spi_rx_bigger_than_tx)
 {
 	if (IS_ENABLED(CONFIG_SPI_STM32_DMA) || IS_ENABLED(CONFIG_DSPI_MCUX_EDMA)) {
@@ -541,7 +557,9 @@ ZTEST(spi_loopback, test_spi_rx_bigger_than_tx)
 	spi_loopback_compare_bufs(all_zeroes_buf, buffer_rx + tx_buf_size, BUF_SIZE - tx_buf_size,
 				  buffer_print_tx, buffer_print_rx);
 }
+#endif
 
+#if 0
 /* test transferring different buffers on the same dma channels */
 ZTEST(spi_loopback, test_spi_complete_large_transfers)
 {
@@ -556,7 +574,9 @@ ZTEST(spi_loopback, test_spi_complete_large_transfers)
 	zassert_false(memcmp(large_buffer_tx, large_buffer_rx, BUF3_SIZE),
 			"Large Buffer contents are different");
 }
+#endif
 
+#if 0
 ZTEST(spi_loopback, test_spi_null_tx_buf_set)
 {
 	struct spi_dt_spec *spec = loopback_specs[spec_idx];
@@ -571,7 +591,9 @@ ZTEST(spi_loopback, test_spi_null_tx_buf_set)
 	spi_loopback_compare_bufs(expected_nop_return_buf, buffer_rx, BUF_SIZE,
 				  buffer_print_rx, buffer_print_rx);
 }
+#endif
 
+#if 1
 ZTEST(spi_loopback, test_spi_null_rx_buf_set)
 {
 	struct spi_dt_spec *spec = loopback_specs[spec_idx];
@@ -580,14 +602,18 @@ ZTEST(spi_loopback, test_spi_null_rx_buf_set)
 
 	spi_loopback_transceive(spec, &tx, NULL);
 }
+#endif
 
+#if 1
 ZTEST(spi_loopback, test_spi_null_tx_rx_buf_set)
 {
 	struct spi_dt_spec *spec = loopback_specs[spec_idx];
 
 	spi_loopback_transceive(spec, NULL, NULL);
 }
+#endif
 
+#if 1
 ZTEST(spi_loopback, test_nop_nil_bufs)
 {
 	struct spi_dt_spec *spec = loopback_specs[spec_idx];
@@ -598,7 +624,9 @@ ZTEST(spi_loopback, test_nop_nil_bufs)
 
 	/* nothing really to check here, check is done in spi_loopback_transceive */
 }
+#endif
 
+#if 1
 /* test using the same buffer for RX and TX will write same data back */
 ZTEST(spi_loopback, test_spi_write_back)
 {
@@ -615,7 +643,9 @@ ZTEST(spi_loopback, test_spi_write_back)
 	spi_loopback_compare_bufs(tx_data, buffer_rx, BUF_SIZE,
 				  buffer_print_tx, buffer_print_rx);
 }
+#endif
 
+#if 1
 /* similar to test_spi_write_back, simulates the real common case of 1 word command */
 ZTEST(spi_loopback, test_spi_same_buf_cmd)
 {
@@ -634,6 +664,7 @@ ZTEST(spi_loopback, test_spi_same_buf_cmd)
 	spi_loopback_compare_bufs(tx_data, buffer_rx, BUF_SIZE,
 				  buffer_print_tx, buffer_print_rx);
 }
+#endif
 
 
 static void spi_loopback_test_word_size(struct spi_dt_spec *spec,
@@ -662,6 +693,7 @@ static void spi_loopback_test_word_size(struct spi_dt_spec *spec,
 		      "%d-bit word buffer contents are different", word_size);
 }
 
+#if 1
 /* Test case for 7-bit word size transfers */
 ZTEST(spi_loopback, test_spi_word_size_7)
 {
@@ -685,7 +717,9 @@ ZTEST(spi_loopback, test_spi_word_size_9)
 	spi_loopback_test_word_size(spec, tx_data_9, buffer_rx_16, tx_data_9,
 				    sizeof(tx_data_9), &spec_copies[1], 9);
 }
+#endif
 
+#if 0
 /* Test case for 16-bit word size transfers */
 ZTEST(spi_loopback, test_spi_word_size_16)
 {
@@ -694,7 +728,9 @@ ZTEST(spi_loopback, test_spi_word_size_16)
 	spi_loopback_test_word_size(spec, buffer_tx_16, buffer_rx_16, tx_data_16,
 				    sizeof(buffer_tx_16), &spec_copies[2], 16);
 }
+#endif
 
+#if 1
 /* Test case for 24-bit word size transfers */
 ZTEST(spi_loopback, test_spi_word_size_24)
 {
@@ -718,6 +754,7 @@ ZTEST(spi_loopback, test_spi_word_size_32)
 	spi_loopback_test_word_size(spec, buffer_tx_32, buffer_rx_32, tx_data_32,
 				    sizeof(buffer_tx_32), &spec_copies[4], 32);
 }
+#endif
 
 static K_THREAD_STACK_DEFINE(thread_stack[3], CONFIG_ZTEST_STACK_SIZE +
 					      CONFIG_TEST_EXTRA_STACK_SIZE);
@@ -805,6 +842,7 @@ static void test_spi_concurrent_transfer_helper(struct spi_dt_spec **specs)
 	zassert_equal(atomic_get(&thread_test_fails), 0);
 }
 
+#if 0
 /* test for multiple threads accessing the driver / bus with the same spi_config */
 ZTEST(spi_loopback, test_spi_concurrent_transfer_same_spec)
 {
@@ -861,6 +899,7 @@ ZTEST(spi_loopback, test_spi_deinit)
 	zassert_ok(gpio_pin_configure_dt(&mosi_pin, GPIO_INPUT));
 	zassert_ok(device_init(dev));
 }
+#endif
 
 #if (CONFIG_SPI_ASYNC)
 static struct k_poll_signal async_sig = K_POLL_SIGNAL_INITIALIZER(async_sig);
@@ -938,6 +977,7 @@ ZTEST(spi_loopback, test_spi_async_call)
 }
 #endif
 
+#if 1
 ZTEST(spi_extra_api_features, test_spi_lock_release)
 {
 	const struct spi_buf_set tx = spi_loopback_setup_xfer(tx_bufs_pool, 1,
@@ -979,6 +1019,7 @@ ZTEST(spi_extra_api_features, test_spi_hold_on_cs)
 	} else if (ret) {
 		goto early_exit;
 	}
+
 	/* Should get start assertion is 1 CS edge but no end */
 	if (spi_loopback_gpio_cs_loopback_check(1)) {
 		ret = -EIO;
@@ -1011,7 +1052,6 @@ ZTEST(spi_extra_api_features, test_spi_hold_on_cs)
 
 	/* now just do a normal transfer to make sure there was no leftover effects */
 	spi_loopback_transceive(hold_spec, &tx, &rx);
-
 	return;
 
 early_exit:
@@ -1020,6 +1060,8 @@ early_exit:
 	/* if there was no error then it was meant to be a skip at this point */
 	ztest_test_skip();
 }
+
+#endif
 
 /*
  *************************

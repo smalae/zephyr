@@ -23,7 +23,13 @@ LOG_MODULE_REGISTER(spi_siwx91x_gspi, CONFIG_SPI_LOG_LEVEL);
 
 #define GSPI_MAX_BAUDRATE_FOR_DYNAMIC_CLOCK   110000000
 #define GSPI_MAX_BAUDRATE_FOR_POS_EDGE_SAMPLE 40000000
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+#define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 4080
+#else
 #define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 1024
+#endif
+
+#define gpdma_buf_is_aligned(buf, len, alignment)   ((((uint32_t)(buf)) % (alignment) == 0) && ((len) % (alignment) == 0))
 
 /* Warning for unsupported configurations */
 #if defined(CONFIG_SPI_ASYNC) && !defined(CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA)
@@ -36,6 +42,10 @@ struct gspi_siwx91x_dma_channel {
 	int chan_nb;
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
 	struct dma_block_config dma_descriptors[CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA_MAX_BLOCKS];
+#endif
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+	uint8_t dma_slot;
+	uint8_t burst_size;
 #endif
 };
 
@@ -55,7 +65,7 @@ struct gspi_siwx91x_data {
 
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
 /* Placeholder buffer for unused RX data */
-static volatile uint8_t empty_buffer;
+static __aligned(32) volatile uint8_t empty_buffer;
 #endif
 
 static bool spi_siwx91x_is_dma_enabled_instance(const struct device *dev)
@@ -178,9 +188,10 @@ static int gspi_siwx91x_config(const struct device *dev, const struct spi_config
 			return -EAGAIN;
 		}
 	}
-
+#ifdef CONFIG_SPI_ASYNC
 	data->ctx.callback = cb;
 	data->ctx.callback_data = userdata;
+#endif
 #endif
 	data->ctx.config = spi_cfg;
 
@@ -212,20 +223,26 @@ static void gspi_siwx91x_dma_rx_callback(const struct device *dev, void *user_da
 
 static int gspi_siwx91x_dma_config(const struct device *dev,
 				   struct gspi_siwx91x_dma_channel *channel, uint32_t block_count,
-				   bool is_tx, uint8_t dfs)
+				   bool is_tx, uint8_t dfs, uint8_t burst_size)
 {
 	struct dma_config cfg = {
 		.channel_direction = is_tx ? MEMORY_TO_PERIPHERAL : PERIPHERAL_TO_MEMORY,
+		.channel_priority = 1,
 		.complete_callback_en = 0,
 		.source_data_size = dfs,
 		.dest_data_size = dfs,
-		.source_burst_length = dfs,
-		.dest_burst_length = dfs,
+		.source_burst_length = burst_size,
+		.dest_burst_length = burst_size,
 		.block_count = block_count,
 		.head_block = channel->dma_descriptors,
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+		.dma_slot = channel->dma_slot,
+#endif
 		.dma_callback = !is_tx ? &gspi_siwx91x_dma_rx_callback : NULL,
 		.user_data = (void *)dev,
 	};
+	
+	//printf("block count = %d\n", block_count);
 
 	return dma_config(channel->dma_dev, channel->chan_nb, &cfg);
 }
@@ -247,6 +264,8 @@ static uint32_t gspi_siwx91x_fill_desc(const struct gspi_siwx91x_config *cfg,
 			new_blk_cfg->source_address = (uint32_t)&(cfg->mosi_overrun);
 			new_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 		}
+		//printf("tx src addr = %x\n", new_blk_cfg->source_address);
+		//printf("tx dst addr = %x\n", new_blk_cfg->dest_address);
 	} else {
 		new_blk_cfg->source_address = (uint32_t)&cfg->reg->GSPI_READ_FIFO;
 		new_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
@@ -258,13 +277,20 @@ static uint32_t gspi_siwx91x_fill_desc(const struct gspi_siwx91x_config *cfg,
 			new_blk_cfg->dest_address = (uint32_t)&empty_buffer;
 			new_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 		}
+		//printf("rx src addr = %x\n", new_blk_cfg->source_address);
+		//printf("rx dst addr = %x\n", new_blk_cfg->dest_address);
 	}
 
 	/* Setup max transfer according to requested transaction size.
 	 * Will top if bigger than the maximum transfer size.
 	 */
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+	new_blk_cfg->block_size =
+		MIN(requested_transaction_size, GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE);
+#else
 	new_blk_cfg->block_size =
 		MIN(requested_transaction_size, GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE * dfs);
+#endif
 	return new_blk_cfg->block_size;
 }
 
@@ -336,15 +362,29 @@ static void gspi_siwx91x_reset_desc(struct gspi_siwx91x_dma_channel *channel)
 	}
 }
 
+static int gspi_siwx91x_get_ahb_burst_size(uint8_t burst_size)
+{
+	if (burst_size < 4) {
+		return 1;	
+	} else if (burst_size < 8) {
+		return 4;
+	} else if (burst_size == 8) {
+		return 8;
+	} else {
+		return -EINVAL;
+	}
+}
+
 static int gspi_siwx91x_prepare_dma_channel(const struct device *spi_dev,
 					    const struct spi_buf *buffer, size_t buffer_count,
 					    struct gspi_siwx91x_dma_channel *channel,
-					    size_t padded_transaction_size, bool is_tx)
+					    size_t padded_transaction_size, bool is_tx, uint8_t burst_size)
 {
 	const struct gspi_siwx91x_config *cfg = spi_dev->config;
 	struct gspi_siwx91x_data *data = spi_dev->data;
 	const uint8_t dfs = SPI_WORD_SIZE_GET(data->ctx.config->operation) / 8;
 	struct dma_block_config *desc;
+	uint8_t dma_burst_size;
 	int ret = 0;
 
 	gspi_siwx91x_reset_desc(channel);
@@ -355,13 +395,20 @@ static int gspi_siwx91x_prepare_dma_channel(const struct device *spi_dev,
 		return -ENOMEM;
 	}
 
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+	dma_burst_size = burst_size;
+#else
+	dma_burst_size = dfs;
+#endif
+
 	ret = gspi_siwx91x_dma_config(spi_dev, channel,
-				      ARRAY_INDEX(channel->dma_descriptors, desc) + 1, is_tx, dfs);
+				      ARRAY_INDEX(channel->dma_descriptors, desc) + 1, is_tx, dfs,
+				      burst_size);
 	return ret;
 }
 
 static int gspi_siwx91x_prepare_dma_transaction(const struct device *dev,
-						size_t padded_transaction_size)
+						size_t padded_transaction_size, uint8_t burst_size)
 {
 	int ret;
 	struct gspi_siwx91x_data *data = dev->data;
@@ -371,13 +418,13 @@ static int gspi_siwx91x_prepare_dma_transaction(const struct device *dev,
 	}
 
 	ret = gspi_siwx91x_prepare_dma_channel(dev, data->ctx.current_tx, data->ctx.tx_count,
-					       &data->dma_tx, padded_transaction_size, true);
+					       &data->dma_tx, padded_transaction_size, true, burst_size);
 	if (ret) {
 		return ret;
 	}
 
 	ret = gspi_siwx91x_prepare_dma_channel(dev, data->ctx.current_rx, data->ctx.rx_count,
-					       &data->dma_rx, padded_transaction_size, false);
+					       &data->dma_rx, padded_transaction_size, false, burst_size);
 
 	return ret;
 }
@@ -390,6 +437,30 @@ static size_t gspi_siwx91x_longest_transfer_size(struct spi_context *instance_ct
 	return MAX(tx_transfer_size, rx_transfer_size);
 }
 
+static inline uint8_t gpdma_get_burst_size(struct spi_context *ctx)
+{
+	// Iterate over the buffers to find the largest possible burst size
+	const uint8_t burst_sizes[] = {1, 2, 4, 8};
+	int burst_size_idx = ARRAY_SIZE(burst_sizes);
+	bool found = false;
+
+	while((burst_size_idx > 0) && (!found)) {
+		burst_size_idx--;
+
+		found = gpdma_buf_is_aligned(ctx->tx_buf, ctx->tx_len, burst_sizes[burst_size_idx]);
+		for(int j = 0; j < ctx->tx_count; j++) {
+			found &= gpdma_buf_is_aligned(ctx->current_tx[j].buf, ctx->current_tx[j].len, burst_sizes[burst_size_idx]);
+		}
+		if(ctx->rx_buf && found) {
+			found &= gpdma_buf_is_aligned(ctx->rx_buf, ctx->rx_len, burst_sizes[burst_size_idx]);
+			for(int j = 0; j < ctx->rx_count; j++) {
+				found &= gpdma_buf_is_aligned(ctx->current_rx[j].buf, ctx->current_rx[j].len, burst_sizes[burst_size_idx]);
+			}
+		}
+	}
+	return burst_sizes[burst_size_idx];
+}
+
 #endif /* CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA */
 
 static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct spi_config *config)
@@ -400,19 +471,29 @@ static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct sp
 	const struct device *dma_dev = data->dma_rx.dma_dev;
 	struct spi_context *ctx = &data->ctx;
 	size_t padded_transaction_size = gspi_siwx91x_longest_transfer_size(ctx);
+	uint8_t burst_size;
+	uint8_t ahb_burst_size;
 	int ret = 0;
 
 	if (padded_transaction_size == 0) {
 		return -EINVAL;
 	}
+	//printf("padded size = %d\n", padded_transaction_size);
 
 	/* Reset the Rx and Tx FIFO register */
 	cfg->reg->GSPI_FIFO_THRLD = 0;
+	burst_size = gpdma_get_burst_size(ctx);
+	ahb_burst_size = gspi_siwx91x_get_ahb_burst_size(burst_size);
 
-	ret = gspi_siwx91x_prepare_dma_transaction(dev, padded_transaction_size);
+	ret = gspi_siwx91x_prepare_dma_transaction(dev, padded_transaction_size, burst_size);
 	if (ret) {
 		return ret;
 	}
+	
+	//printf("burst_size = %d\n", burst_size);
+	//printf("ahb_burst_size = %d\n", ahb_burst_size);
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AEMPTY_THRLD = ahb_burst_size - 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AFULL_THRLD = ahb_burst_size - 1;
 
 	spi_context_cs_control(ctx, true);
 
@@ -629,12 +710,20 @@ static DEVICE_API(spi, gspi_siwx91x_driver_api) = {
 };
 
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+#define SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL_INIT(index, dir)                                       \
+	.dma_##dir = {                                                                             \
+		.chan_nb = DT_INST_DMAS_CELL_BY_NAME(index, dir, channel),                         \
+		.dma_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(index, dir)),                   \
+		.dma_slot = DT_INST_DMAS_CELL_BY_NAME(index, dir, slot),                           \
+	},
+#else
 #define SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL_INIT(index, dir)                                       \
 	.dma_##dir = {                                                                             \
 		.chan_nb = DT_INST_DMAS_CELL_BY_NAME(index, dir, channel),                         \
 		.dma_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(index, dir)),                   \
 	},
-
+#endif
 #define SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL(index, dir)                                            \
 	COND_CODE_1(DT_INST_NODE_HAS_PROP(index, dmas),                                            \
 		    (SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL_INIT(index, dir)), ())

@@ -420,8 +420,8 @@
 			interrupt-names = "gpdma0";
 			clocks = <&clock0 SIWX91X_CLK_GPDMA0>;
 			silabs,channel-reg-base = <0x21081004>;
-			#dma-cells = <1>;
-			dma-channels = <8>;
+			#dma-cells = <2>;
+			silabs,dma-channel-count = <8>;
 			status = "disabled";
 		};
 	};
