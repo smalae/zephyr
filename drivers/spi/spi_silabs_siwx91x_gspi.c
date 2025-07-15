@@ -24,7 +24,7 @@ LOG_MODULE_REGISTER(spi_siwx91x_gspi, CONFIG_SPI_LOG_LEVEL);
 #define GSPI_MAX_BAUDRATE_FOR_DYNAMIC_CLOCK   110000000
 #define GSPI_MAX_BAUDRATE_FOR_POS_EDGE_SAMPLE 40000000
 #ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
-#define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 4080
+#define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 4094
 #else
 #define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 1024
 #endif
@@ -54,7 +54,7 @@ struct gspi_siwx91x_config {
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
 	const struct pinctrl_dev_config *pcfg;
-	uint8_t mosi_overrun;
+	__aligned(32) uint32_t mosi_overrun;
 };
 
 struct gspi_siwx91x_data {
@@ -65,7 +65,7 @@ struct gspi_siwx91x_data {
 
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
 /* Placeholder buffer for unused RX data */
-static __aligned(32) volatile uint8_t empty_buffer;
+static __aligned(32) volatile uint32_t empty_buffer;
 #endif
 
 static bool spi_siwx91x_is_dma_enabled_instance(const struct device *dev)
@@ -243,6 +243,7 @@ static int gspi_siwx91x_dma_config(const struct device *dev,
 	};
 	
 	//printf("block count = %d\n", block_count);
+	//printf("burst_size = %d\n", burst_size);
 
 	return dma_config(channel->dma_dev, channel->chan_nb, &cfg);
 }
@@ -291,6 +292,7 @@ static uint32_t gspi_siwx91x_fill_desc(const struct gspi_siwx91x_config *cfg,
 	new_blk_cfg->block_size =
 		MIN(requested_transaction_size, GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE * dfs);
 #endif
+	//printf("new_blk_cfg->block_size = %d\n", new_blk_cfg->block_size);
 	return new_blk_cfg->block_size;
 }
 
@@ -416,6 +418,8 @@ static int gspi_siwx91x_prepare_dma_transaction(const struct device *dev,
 	if (padded_transaction_size == 0) {
 		return 0;
 	}
+	
+	//printf("padded size = %d\n", padded_transaction_size);
 
 	ret = gspi_siwx91x_prepare_dma_channel(dev, data->ctx.current_tx, data->ctx.tx_count,
 					       &data->dma_tx, padded_transaction_size, true, burst_size);
@@ -485,15 +489,19 @@ static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct sp
 	burst_size = gpdma_get_burst_size(ctx);
 	ahb_burst_size = gspi_siwx91x_get_ahb_burst_size(burst_size);
 
+#if 0
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AEMPTY_THRLD = ahb_burst_size - 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AFULL_THRLD = ahb_burst_size - 1;
+#endif
+#if 1
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AEMPTY_THRLD = 0;
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AFULL_THRLD = 0;
+#endif
+
 	ret = gspi_siwx91x_prepare_dma_transaction(dev, padded_transaction_size, burst_size);
 	if (ret) {
 		return ret;
 	}
-	
-	//printf("burst_size = %d\n", burst_size);
-	//printf("ahb_burst_size = %d\n", ahb_burst_size);
-	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AEMPTY_THRLD = ahb_burst_size - 1;
-	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AFULL_THRLD = ahb_burst_size - 1;
 
 	spi_context_cs_control(ctx, true);
 

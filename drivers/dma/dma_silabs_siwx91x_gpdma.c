@@ -144,6 +144,14 @@ static int siwx91x_gpdma_desc_config(struct gpdma_siwx91x_data *data,
 		xfer_cfg->src = (void *)block_addr->source_address;
 		xfer_cfg->dest = (void *)block_addr->dest_address;
 		xfer_cfg->chnlCtrlConfig.transSize = block_addr->block_size;
+
+		if (block_addr->dest_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
+			xfer_cfg->chnlCtrlConfig.dstFifoMode = 1;
+		}
+
+		if (block_addr->source_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
+			xfer_cfg->chnlCtrlConfig.srcFifoMode = 1;
+		}
 		
 		//printf("xfer_cfg->src = %x\n",xfer_cfg->src);
 		//printf("xfer_cfg->dest = %x\n",xfer_cfg->dest);
@@ -217,13 +225,17 @@ static int siwx91x_gpdma_xfer_configure(const struct device *dev, const struct d
 		return -EINVAL;
 	}
 
+#if 1
 	xfer_cfg.chnlCtrlConfig.srcDataWidth = siwx91x_data_size(config->source_data_size);
 	if (xfer_cfg.chnlCtrlConfig.destDataWidth == DATA_WIDTH_INVALID) {
 		return -EINVAL;
 	}
 
 	xfer_cfg.chnlCtrlConfig.destDataWidth = xfer_cfg.chnlCtrlConfig.srcDataWidth;
-	//printf("data width = %d\n", xfer_cfg.chnlCtrlConfig.srcDataWidth);
+#else
+	xfer_cfg.chnlCtrlConfig.srcDataWidth = 0;
+	xfer_cfg.chnlCtrlConfig.destDataWidth = 0;
+#endif
 
 	if (config->block_count == 1) {
 		//printf("linked list off\n");
@@ -238,18 +250,24 @@ static int siwx91x_gpdma_xfer_configure(const struct device *dev, const struct d
 	//printf("linked int = %d\n", xfer_cfg.chnlCtrlConfig.linkInterrupt);
 
 	if (xfer_cfg.chnlCtrlConfig.transType == TRANSFER_MEM_TO_PER) {
-		xfer_cfg.chnlCtrlConfig.dstFifoMode = 1;
+		//xfer_cfg.chnlCtrlConfig.dstFifoMode = 1;
 		xfer_cfg.miscChnlCtrlConfig.destChannelId = config->dma_slot;
 		//xfer_cfg.chnlCtrlConfig.srcAddContiguous = 1;
 	} else if (xfer_cfg.chnlCtrlConfig.transType == TRANSFER_PER_TO_MEM) {
-		xfer_cfg.chnlCtrlConfig.srcFifoMode = 1;
+		//xfer_cfg.chnlCtrlConfig.srcFifoMode = 1;
 		xfer_cfg.miscChnlCtrlConfig.srcChannelId = config->dma_slot;
 		//xfer_cfg.chnlCtrlConfig.dstAddContiguous = 1;
 	}
-
+#if 0
 	xfer_cfg.miscChnlCtrlConfig.ahbBurstSize = siwx91x_ahb_burst_size(config->source_burst_length);
 	xfer_cfg.miscChnlCtrlConfig.destDataBurst = config->dest_burst_length;
 	xfer_cfg.miscChnlCtrlConfig.srcDataBurst = config->source_burst_length;
+#endif
+#if 1
+	xfer_cfg.miscChnlCtrlConfig.ahbBurstSize = 0;
+	xfer_cfg.miscChnlCtrlConfig.destDataBurst = 1;
+	xfer_cfg.miscChnlCtrlConfig.srcDataBurst = 1;
+#endif
 
 	//printf("xfer_cfg.miscChnlCtrlConfig.ahbBurstSize = %d\n", xfer_cfg.miscChnlCtrlConfig.ahbBurstSize);
 	//printf("xfer_cfg.miscChnlCtrlConfig.destDataBurst = %d\n", xfer_cfg.miscChnlCtrlConfig.destDataBurst);
@@ -260,16 +278,13 @@ static int siwx91x_gpdma_xfer_configure(const struct device *dev, const struct d
 		return ret;
 	}
 
-	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_SIZE =
-		32;
-	//cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_STRT_ADDR = channel * 64;
-
 	return 0;
 }
 
 static int siwx91x_gpdma_configure(const struct device *dev, uint32_t channel,
 				   struct dma_config *config)
 {
+	const struct gpdma_siwx91x_config *cfg = dev->config;
 	struct gpdma_siwx91x_data *data = dev->data;
 	RSI_GPDMA_CHA_CFG_T gpdma_channel_cfg = {
 		.descFetchDoneIntr = config->complete_callback_en,
@@ -313,9 +328,13 @@ static int siwx91x_gpdma_configure(const struct device *dev, uint32_t channel,
 		return -EINVAL;
 	}
 
+	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS = 0;
+	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_SIZE = 2;
+	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_STRT_ADDR = channel * 4;
+	//cfg->reg->GLOBAL.DMA_CHNL_SQUASH_REG |= BIT(channel);
 	data->chan_info[channel].dma_callback = config->dma_callback;
 	data->chan_info[channel].cb_data = config->user_data;
-
+	//printf("FIFO reg = %x\n", cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS);
 	atomic_set_bit(data->dma_ctx.atomic, channel);
 
 	return 0;
@@ -475,7 +494,7 @@ static void siwx91x_gpdma_isr(const struct device *dev)
 	uint32_t abort_mask = (BIT(0) | BIT(3)) << channel_shift;
 	uint32_t desc_fetch_mask = BIT(1) << channel_shift;
 	uint32_t done_mask = BIT(2) << channel_shift;
-
+	//printf("ISR ch = %d**\n", channel);
 	if (channel_int_status & abort_mask) {
 		RSI_GPDMA_AbortChannel(data->gpdma_handle, channel);
 		cfg->reg->GLOBAL.INTERRUPT_STAT_REG = abort_mask;
@@ -500,8 +519,9 @@ static void siwx91x_gpdma_isr(const struct device *dev)
 			data->chan_info[channel].dma_callback(dev, data->chan_info[channel].cb_data,
 							      channel, 0);
 		}
-		//printf("ISR ch = %d**\n", channel);
 	}
+	
+	//printf("squash reg = %x\n", cfg->reg->GLOBAL.DMA_CHNL_SQUASH_REG);
 
 	sys_clear_bit((mem_addr_t)&data->channel_xfer_status, channel);
 }
