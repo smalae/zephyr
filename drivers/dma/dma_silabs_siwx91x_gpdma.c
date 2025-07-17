@@ -55,12 +55,13 @@ struct gpdma_siwx91x_config {
 struct gpdma_siwx91x_data {
 	struct dma_context dma_ctx;
 	RSI_GPDMA_HANDLE_T gpdma_handle;
-	__aligned(4) GPDMA_DATACONTEXT_T gpdma_context;
 	struct sys_mem_blocks *gpdma_desc_pool;
 	struct gpdma_siwx91x_channel_info *chan_info;
 	uint8_t channel_xfer_status;
 	uint8_t reload_compatible;
 };
+
+static GPDMA_DATACONTEXT_T gpdma_context __aligned(4);
 
 static bool siwx91x_is_priority_valid(uint32_t channel_priority)
 {
@@ -147,28 +148,35 @@ static int siwx91x_gpdma_desc_config(struct gpdma_siwx91x_data *data,
 
 		if (block_addr->dest_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
 			xfer_cfg->chnlCtrlConfig.dstFifoMode = 1;
+			xfer_cfg->chnlCtrlConfig.srcFifoMode = 0;
 		}
 
 		if (block_addr->source_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
 			xfer_cfg->chnlCtrlConfig.srcFifoMode = 1;
+			xfer_cfg->chnlCtrlConfig.dstFifoMode = 0;
 		}
-		
-		//printf("xfer_cfg->src = %x\n",xfer_cfg->src);
-		//printf("xfer_cfg->dest = %x\n",xfer_cfg->dest);
-		//printf("xfer_cfg->chnlCtrlConfig.transSize = %d\n", xfer_cfg->chnlCtrlConfig.transSize);
-
-		if (sys_mem_blocks_alloc_contiguous(data->gpdma_desc_pool, 3, &gpdma_desc_addr)) {
+#if 0
+		printf("xfer_cfg->src = %x\n",xfer_cfg->src);
+		printf("xfer_cfg->dest = %x\n",xfer_cfg->dest);
+		printf("xfer_cfg->chnlCtrlConfig.transSize = %d\n", xfer_cfg->chnlCtrlConfig.transSize);
+#endif
+		if (sys_mem_blocks_alloc_contiguous(data->gpdma_desc_pool, 1, &gpdma_desc_addr)) {
 			if (pPrevDesc == NULL) {
 				return -EINVAL;
 			}
 			goto free_desc;
 		}
-		block_alloc_count += 3;
+		block_alloc_count += 1;
 
 		if (pPrevDesc == NULL) {
 			data->chan_info[channel].chan_base_desc =
 				(RSI_GPDMA_DESC_T *)gpdma_desc_addr;
 		}
+
+		memset(gpdma_desc_addr, 0, 32);
+#if 0
+		printf("gpdma_desc_addr = %x\n", gpdma_desc_addr);
+#endif
 
 		if (RSI_GPDMA_BuildDescriptors(data->gpdma_handle, xfer_cfg,
 					       (RSI_GPDMA_DESC_T *)gpdma_desc_addr, pPrevDesc)) {
@@ -183,6 +191,7 @@ static int siwx91x_gpdma_desc_config(struct gpdma_siwx91x_data *data,
 		/* next_block address for last block must be null */
 		goto free_desc;
 	}
+	//printf("block count = %d\n", block_alloc_count);
 
 	if (RSI_GPDMA_SetupChannelTransfer(data->gpdma_handle, channel,
 					   data->chan_info[channel].chan_base_desc)) {
@@ -212,8 +221,6 @@ static int siwx91x_gpdma_xfer_configure(const struct device *dev, const struct d
 	if (xfer_cfg.chnlCtrlConfig.transType == TRANSFER_DIR_INVALID) {
 		return -EINVAL;
 	}
-	
-	//printf("xfer_cfg.chnlCtrlConfig.transType = %d\n", xfer_cfg.chnlCtrlConfig.transType);
 
 	data->chan_info[channel].xfer_direction = config->channel_direction;
 
@@ -225,54 +232,48 @@ static int siwx91x_gpdma_xfer_configure(const struct device *dev, const struct d
 		return -EINVAL;
 	}
 
-#if 1
 	xfer_cfg.chnlCtrlConfig.srcDataWidth = siwx91x_data_size(config->source_data_size);
 	if (xfer_cfg.chnlCtrlConfig.destDataWidth == DATA_WIDTH_INVALID) {
 		return -EINVAL;
 	}
 
 	xfer_cfg.chnlCtrlConfig.destDataWidth = xfer_cfg.chnlCtrlConfig.srcDataWidth;
-#else
-	xfer_cfg.chnlCtrlConfig.srcDataWidth = 0;
-	xfer_cfg.chnlCtrlConfig.destDataWidth = 0;
-#endif
 
 	if (config->block_count == 1) {
-		//printf("linked list off\n");
 		xfer_cfg.chnlCtrlConfig.linkListOn = 0;
 		data->reload_compatible = 1;
 	} else {
-		//printf("linked list on\n");
 		xfer_cfg.chnlCtrlConfig.linkListOn = 1;
 		data->reload_compatible = 0;
 	}
 	xfer_cfg.chnlCtrlConfig.linkInterrupt = config->complete_callback_en;
-	//printf("linked int = %d\n", xfer_cfg.chnlCtrlConfig.linkInterrupt);
 
 	if (xfer_cfg.chnlCtrlConfig.transType == TRANSFER_MEM_TO_PER) {
-		//xfer_cfg.chnlCtrlConfig.dstFifoMode = 1;
 		xfer_cfg.miscChnlCtrlConfig.destChannelId = config->dma_slot;
-		//xfer_cfg.chnlCtrlConfig.srcAddContiguous = 1;
+		//xfer_cfg.chnlCtrlConfig.mastrIfFetchSel = 0;
+		//xfer_cfg.chnlCtrlConfig.mastrIfSendSel = 1;
 	} else if (xfer_cfg.chnlCtrlConfig.transType == TRANSFER_PER_TO_MEM) {
-		//xfer_cfg.chnlCtrlConfig.srcFifoMode = 1;
 		xfer_cfg.miscChnlCtrlConfig.srcChannelId = config->dma_slot;
-		//xfer_cfg.chnlCtrlConfig.dstAddContiguous = 1;
+		//xfer_cfg.chnlCtrlConfig.mastrIfFetchSel = 1;
+		//xfer_cfg.chnlCtrlConfig.mastrIfSendSel = 0;
 	}
-#if 0
+
+#if 1
 	xfer_cfg.miscChnlCtrlConfig.ahbBurstSize = siwx91x_ahb_burst_size(config->source_burst_length);
 	xfer_cfg.miscChnlCtrlConfig.destDataBurst = config->dest_burst_length;
 	xfer_cfg.miscChnlCtrlConfig.srcDataBurst = config->source_burst_length;
 #endif
-#if 1
-	xfer_cfg.miscChnlCtrlConfig.ahbBurstSize = 0;
-	xfer_cfg.miscChnlCtrlConfig.destDataBurst = 1;
-	xfer_cfg.miscChnlCtrlConfig.srcDataBurst = 1;
+
+#if 0
+	xfer_cfg.miscChnlCtrlConfig.ahbBurstSize = 1;
+	xfer_cfg.miscChnlCtrlConfig.destDataBurst = 4;
+	xfer_cfg.miscChnlCtrlConfig.srcDataBurst = 4;
 #endif
-
-	//printf("xfer_cfg.miscChnlCtrlConfig.ahbBurstSize = %d\n", xfer_cfg.miscChnlCtrlConfig.ahbBurstSize);
-	//printf("xfer_cfg.miscChnlCtrlConfig.destDataBurst = %d\n", xfer_cfg.miscChnlCtrlConfig.destDataBurst);
-	//printf("xfer_cfg.miscChnlCtrlConfig.srcDataBurst = %d\n", xfer_cfg.miscChnlCtrlConfig.srcDataBurst);
-
+#if 0
+	printf("%d\n", xfer_cfg.miscChnlCtrlConfig.ahbBurstSize);
+	printf("%d\n", xfer_cfg.miscChnlCtrlConfig.destDataBurst);
+	printf("%d\n", xfer_cfg.miscChnlCtrlConfig.srcDataBurst);
+#endif
 	ret = siwx91x_gpdma_desc_config(data, config, &xfer_cfg, channel);
 	if (ret) {
 		return ret;
@@ -307,17 +308,17 @@ static int siwx91x_gpdma_configure(const struct device *dev, uint32_t channel,
 		/* Transfer in progress */
 		return -EIO;
 	}
+#if 0
+	if (channel == 0)
+	printf("tx-----------\n");
+	else
+	printf("rx-----------\n");
+#endif
 
 	if (!siwx91x_is_priority_valid(config->channel_priority)) {
 		return -EINVAL;
 	}
 	gpdma_channel_cfg.channelPrio = config->channel_priority;
-	if (channel == 0) {
-		//printf("tx-----------\n");
-	} else {
-		//printf("rx-----------\n");
-	}
-	//printf("priority = %d\n", gpdma_channel_cfg.channelPrio);
 
 	if (RSI_GPDMA_SetupChannel(data->gpdma_handle, &gpdma_channel_cfg)) {
 		return -EIO;
@@ -328,14 +329,37 @@ static int siwx91x_gpdma_configure(const struct device *dev, uint32_t channel,
 		return -EINVAL;
 	}
 
+	//cfg->reg->GLOBAL.DMA_CHNL_SQUASH_REG = BIT(channel);
 	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS = 0;
-	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_SIZE = 2;
-	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_STRT_ADDR = channel * 4;
-	//cfg->reg->GLOBAL.DMA_CHNL_SQUASH_REG |= BIT(channel);
+	if (channel) {
+	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_SIZE = 8;
+	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_STRT_ADDR = 0;
+	} else {
+	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_SIZE = 8;
+	cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS_b.FIFO_STRT_ADDR = 8;
+	}
+	//cfg->channel_reg->CHANNEL_CONFIG[channel].PRIORITY_CHNL_REGS_b.PRIORITY_CH = 0;
+
 	data->chan_info[channel].dma_callback = config->dma_callback;
 	data->chan_info[channel].cb_data = config->user_data;
-	//printf("FIFO reg = %x\n", cfg->channel_reg->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS);
 	atomic_set_bit(data->dma_ctx.atomic, channel);
+
+#if 0
+	printf("GPDMA_G->GLOBAL.DMA_CHNL_ENABLE_REG = %x\n", GPDMA_G->GLOBAL.DMA_CHNL_ENABLE_REG);
+	printf("GPDMA_G->GLOBAL.DMA_CHNL_LOCK_REG = %x\n", GPDMA_G->GLOBAL.DMA_CHNL_LOCK_REG);
+	printf("GPDMA_G->GLOBAL.DMA_CHNL_SQUASH_REG = %x\n", GPDMA_G->GLOBAL.DMA_CHNL_SQUASH_REG);
+	printf("GPDMA_G->GLOBAL.INTERRUPT_MASK_REG = %x\n", GPDMA_G->GLOBAL.INTERRUPT_MASK_REG);
+	printf("GPDMA_G->GLOBAL.INTERRUPT_REG = %x\n", GPDMA_G->GLOBAL.INTERRUPT_REG);
+	printf("GPDMA_G->GLOBAL.INTERRUPT_STAT_REG = %x\n", GPDMA_G->GLOBAL.INTERRUPT_STAT_REG);
+	printf("\n");
+	printf("GPDMA_C->CHANNEL_CONFIG[].CHANNEL_CTRL_REG_CHNL = %x\n", GPDMA_C->CHANNEL_CONFIG[channel].CHANNEL_CTRL_REG_CHNL);
+	printf("GPDMA_C->CHANNEL_CONFIG[].DEST_ADDR_REG_CHNL = %x\n", GPDMA_C->CHANNEL_CONFIG[channel].DEST_ADDR_REG_CHNL);
+	printf("GPDMA_C->CHANNEL_CONFIG[].SRC_ADDR_REG_CHNL = %x\n", GPDMA_C->CHANNEL_CONFIG[channel].SRC_ADDR_REG_CHNL);
+	printf("GPDMA_C->CHANNEL_CONFIG[].FIFO_CONFIG_REGS = %x\n", GPDMA_C->CHANNEL_CONFIG[channel].FIFO_CONFIG_REGS);
+	printf("GPDMA_C->CHANNEL_CONFIG[].LINK_LIST_PTR_REGS = %x\n", GPDMA_C->CHANNEL_CONFIG[channel].LINK_LIST_PTR_REGS);
+	printf("GPDMA_C->CHANNEL_CONFIG[].MISC_CHANNEL_CTRL_REG_CHNL = %x\n", GPDMA_C->CHANNEL_CONFIG[channel].MISC_CHANNEL_CTRL_REG_CHNL);
+	printf("GPDMA_C->CHANNEL_CONFIG[].PRIORITY_CHNL_REGS = %x\n", GPDMA_C->CHANNEL_CONFIG[channel].PRIORITY_CHNL_REGS);
+#endif
 
 	return 0;
 }
@@ -469,7 +493,7 @@ static int siwx91x_gpdma_init(const struct device *dev)
 	};
 	int ret;
 
-	data->gpdma_handle = RSI_GPDMA_Init(&data->gpdma_context, &gpdma_init);
+	data->gpdma_handle = RSI_GPDMA_Init(&gpdma_context, &gpdma_init);
 	if (data->gpdma_handle == NULL) {
 		return -EIO;
 	}
@@ -488,16 +512,18 @@ static void siwx91x_gpdma_isr(const struct device *dev)
 {
 	const struct gpdma_siwx91x_config *cfg = dev->config;
 	struct gpdma_siwx91x_data *data = dev->data;
-	uint32_t channel = find_lsb_set(cfg->reg->GLOBAL.INTERRUPT_REG) - 1;
-	uint32_t channel_int_status = cfg->reg->GLOBAL.INTERRUPT_STAT_REG;
+	volatile uint32_t channel = find_lsb_set(cfg->reg->GLOBAL.INTERRUPT_REG) - 1;
+	volatile uint32_t channel_int_status = cfg->reg->GLOBAL.INTERRUPT_STAT_REG;
 	uint32_t channel_shift = channel * 4;
 	uint32_t abort_mask = (BIT(0) | BIT(3)) << channel_shift;
 	uint32_t desc_fetch_mask = BIT(1) << channel_shift;
 	uint32_t done_mask = BIT(2) << channel_shift;
-	//printf("ISR ch = %d**\n", channel);
+
+	//printf("ISR***\n");
 	if (channel_int_status & abort_mask) {
 		RSI_GPDMA_AbortChannel(data->gpdma_handle, channel);
 		cfg->reg->GLOBAL.INTERRUPT_STAT_REG = abort_mask;
+		//printf("abort***\n");
 	}
 
 	if (channel_int_status & desc_fetch_mask) {
@@ -506,6 +532,7 @@ static void siwx91x_gpdma_isr(const struct device *dev)
 			data->chan_info[channel].dma_callback(dev, data->chan_info[channel].cb_data,
 							      channel, 0);
 		}
+		//printf("desc fetch***\n");
 	}
 
 	if (channel_int_status & done_mask) {
@@ -519,9 +546,8 @@ static void siwx91x_gpdma_isr(const struct device *dev)
 			data->chan_info[channel].dma_callback(dev, data->chan_info[channel].cb_data,
 							      channel, 0);
 		}
+		//printf("done***\n");
 	}
-	
-	//printf("squash reg = %x\n", cfg->reg->GLOBAL.DMA_CHNL_SQUASH_REG);
 
 	sys_clear_bit((mem_addr_t)&data->channel_xfer_status, channel);
 }
@@ -538,8 +564,8 @@ static DEVICE_API(dma, siwx91x_gpdma_api) = {
 #define SIWX91X_GPDMA_INIT(inst)                                                                   \
 	static ATOMIC_DEFINE(dma_channels_atomic_##inst,                                           \
 			     DT_INST_PROP(inst, silabs_dma_channel_count));                        \
-	SYS_MEM_BLOCKS_DEFINE_STATIC(desc_pool_##inst, 8,                                          \
-				     CONFIG_GPDMA_SILABS_SIWX91X_DESCRIPTOR_COUNT * 3, 1024);      \
+	SYS_MEM_BLOCKS_DEFINE_STATIC(desc_pool_##inst, 32,                                         \
+				     CONFIG_GPDMA_SILABS_SIWX91X_DESCRIPTOR_COUNT, 512);           \
 	static struct gpdma_siwx91x_channel_info                                                   \
 		chan_info_##inst[DT_INST_PROP(inst, silabs_dma_channel_count)];                    \
 	static struct gpdma_siwx91x_data gpdma_data_##inst = {                                     \

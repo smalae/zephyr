@@ -29,6 +29,6 @@ if DMA_SILABS_SIWX91X_GPDMA
 
 config GPDMA_SILABS_SIWX91X_DESCRIPTOR_COUNT
 	int "The maximum GPDMA descriptor count"
-	default 16
+	default 32
 
 endif
