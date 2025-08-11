@@ -14,6 +14,7 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/types.h>
+#include <zephyr/pm/device.h>
 #include "rsi_rom_udma.h"
 #include "rsi_rom_udma_wrapper.h"
 #include "rsi_udma.h"
@@ -491,7 +492,6 @@ static int siwx91x_dma_start(const struct device *dev, uint32_t channel)
 		/* Apply software trigger to start transfer */
 		sys_set_bit((mem_addr_t)&cfg->reg->CHNL_SW_REQUEST, channel);
 	}
-
 	return 0;
 }
 
@@ -560,6 +560,48 @@ bool siwx91x_dma_chan_filter(const struct device *dev, int channel, void *filter
 	}
 }
 
+static int dma_siwx91x_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	const struct dma_siwx91x_config *cfg = dev->config;
+	struct dma_siwx91x_data *data = dev->data;
+	void *udma_handle = NULL;
+	UDMA_RESOURCES udma_resources = {
+		.reg = cfg->reg, /* UDMA register base address */
+		.udma_irq_num = cfg->irq_number,
+		.desc = cfg->sram_desc_addr,
+	};
+	int ret;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		ret = clock_control_on(cfg->clock_dev, cfg->clock_subsys);
+		if (ret) {
+			return ret;
+		}
+
+		udma_handle = UDMAx_Initialize(&udma_resources, udma_resources.desc, NULL,
+					       (uint32_t *)&data->udma_handle);
+		if (udma_handle != &data->udma_handle) {
+			return -EINVAL;
+		}
+
+		cfg->irq_configure();
+
+		if (UDMAx_DMAEnable(&udma_resources, udma_handle) != 0) {
+			return -EBUSY;
+		}
+
+		break;
+	case PM_DEVICE_ACTION_SUSPEND:
+		return 0;
+		break;
+	default:
+		return -ENOTSUP;
+		break;
+	}
+	return 0;
+}
+
 /* Function to initialize DMA peripheral */
 static int siwx91x_dma_init(const struct device *dev)
 {
@@ -591,7 +633,7 @@ static int siwx91x_dma_init(const struct device *dev)
 		return -EBUSY;
 	}
 
-	return 0;
+	return pm_device_driver_init(dev, dma_siwx91x_pm_action);
 }
 
 static void siwx91x_dma_isr(const struct device *dev)
@@ -701,7 +743,8 @@ static DEVICE_API(dma, siwx91x_dma_api) = {
 					      (siwx91x_dma_chan_desc##inst)),                      \
 		.irq_configure = siwx91x_dma_irq_configure_##inst,                                 \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(inst, siwx91x_dma_init, NULL, &dma_data_##inst, &dma_cfg_##inst,     \
+	PM_DEVICE_DT_INST_DEFINE(inst, dma_siwx91x_pm_action);                                          \
+	DEVICE_DT_INST_DEFINE(inst, siwx91x_dma_init, PM_DEVICE_DT_INST_GET(inst), &dma_data_##inst, &dma_cfg_##inst,     \
 			      POST_KERNEL, CONFIG_DMA_INIT_PRIORITY, &siwx91x_dma_api);
 
 DT_INST_FOREACH_STATUS_OKAY(SIWX91X_DMA_INIT)
