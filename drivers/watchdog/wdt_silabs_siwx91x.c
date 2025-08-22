@@ -19,6 +19,12 @@
 #define DT_DRV_COMPAT                       silabs_siwx91x_wdt
 #define SIWX91X_WDT_SYSTEM_RESET_TIMER_MASK 0x0000001F
 
+#ifdef CONFIG_FLASH_INTERRUPTS_TEST
+const struct siwx91x_wdt_config *local_config;
+struct siwx91x_wdt_data *local_data;
+
+#endif /* CONFIG_FLASH_INTERRUPTS_TEST */
+
 struct siwx91x_wdt_config {
 	/* WDT register base address */
 	MCU_WDT_Type *reg;
@@ -200,6 +206,23 @@ static int siwx91x_wdt_feed(const struct device *dev, int channel_id)
 	return 0;
 }
 
+#ifdef CONFIG_FLASH_INTERRUPTS_TEST
+static void siwx91x_wdt_direct_isr(void)
+{
+
+	/* Clear WDT interrupt */
+	RSI_WWDT_IntrClear();
+
+	if (local_data->delay_irq) {
+		/* Restart the timer */
+		RSI_WWDT_ReStart(local_config->reg);
+	}
+
+	if (local_data->callback != NULL) {
+		local_data->callback(NULL, 0);
+	}
+}
+#else
 static void siwx91x_wdt_isr(const struct device *dev)
 {
 	const struct siwx91x_wdt_config *config = dev->config;
@@ -217,6 +240,7 @@ static void siwx91x_wdt_isr(const struct device *dev)
 		data->callback(dev, 0);
 	}
 }
+#endif
 
 static int siwx91x_wdt_init(const struct device *dev)
 {
@@ -238,6 +262,10 @@ static int siwx91x_wdt_init(const struct device *dev)
 
 	config->irq_config();
 	RSI_WWDT_IntrUnMask();
+#ifdef CONFIG_FLASH_INTERRUPTS_TEST
+	local_config = config;
+	local_data = data;
+#endif /* CONFIG_FLASH_INTERRUPTS_TEST */
 
 	return 0;
 }
@@ -253,8 +281,7 @@ static DEVICE_API(wdt, siwx91x_wdt_driver_api) = {
 	static struct siwx91x_wdt_data siwx91x_wdt_data_##inst;                                    \
 	static void siwx91x_wdt_irq_configure_##inst(void)                                         \
 	{                                                                                          \
-		IRQ_CONNECT(DT_INST_IRQ(inst, irq), DT_INST_IRQ(inst, priority), siwx91x_wdt_isr,  \
-			    DEVICE_DT_INST_GET(inst), 0);                                          \
+	IRQ_DIRECT_CONNECT(DT_INST_IRQ(inst, irq), DT_INST_IRQ(inst, priority), siwx91x_wdt_direct_isr, 0); \
 		irq_enable(DT_INST_IRQ(inst, irq));                                                \
 	}                                                                                          \
 	static const struct siwx91x_wdt_config siwx91x_wdt_config_##inst = {                       \
