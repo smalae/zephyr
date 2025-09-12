@@ -24,7 +24,12 @@ LOG_MODULE_REGISTER(spi_siwx91x_gspi, CONFIG_SPI_LOG_LEVEL);
 
 #define GSPI_MAX_BAUDRATE_FOR_DYNAMIC_CLOCK   110000000
 #define GSPI_MAX_BAUDRATE_FOR_POS_EDGE_SAMPLE 40000000
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+#define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 4092
+#define gpdma_buf_is_aligned(buf, len, alignment)   ((((uint32_t)(buf)) % (alignment) == 0) && ((len) % (alignment) == 0))
+#else
 #define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 1024
+#endif
 
 /* Warning for unsupported configurations */
 #if defined(CONFIG_SPI_ASYNC) && !defined(CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA)
@@ -38,6 +43,9 @@ struct gspi_siwx91x_dma_channel {
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
 	struct dma_block_config dma_descriptors[CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA_MAX_BLOCKS];
 #endif
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+	uint8_t dma_slot;
+#endif
 };
 
 struct gspi_siwx91x_config {
@@ -45,7 +53,7 @@ struct gspi_siwx91x_config {
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
 	const struct pinctrl_dev_config *pcfg;
-	uint8_t mosi_overrun;
+	__aligned(32) uint32_t mosi_overrun;
 };
 
 struct gspi_siwx91x_data {
@@ -56,7 +64,7 @@ struct gspi_siwx91x_data {
 
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
 /* Placeholder buffer for unused RX data */
-static volatile uint8_t empty_buffer;
+static __aligned(32) volatile uint32_t empty_buffer;
 #endif
 
 static bool spi_siwx91x_is_dma_enabled_instance(const struct device *dev)
@@ -179,9 +187,10 @@ static int gspi_siwx91x_config(const struct device *dev, const struct spi_config
 			return -EAGAIN;
 		}
 	}
-
+#ifdef CONFIG_SPI_ASYNC
 	data->ctx.callback = cb;
 	data->ctx.callback_data = userdata;
+#endif
 #endif
 	data->ctx.config = spi_cfg;
 
@@ -217,13 +226,17 @@ static int gspi_siwx91x_dma_config(const struct device *dev,
 {
 	struct dma_config cfg = {
 		.channel_direction = is_tx ? MEMORY_TO_PERIPHERAL : PERIPHERAL_TO_MEMORY,
+		.channel_priority = 1,
 		.complete_callback_en = 0,
 		.source_data_size = dfs,
 		.dest_data_size = dfs,
-		.source_burst_length = dfs,
-		.dest_burst_length = dfs,
+		.source_burst_length = 1,
+		.dest_burst_length = 1,
 		.block_count = block_count,
 		.head_block = channel->dma_descriptors,
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+		.dma_slot = channel->dma_slot,
+#endif
 		.dma_callback = !is_tx ? &gspi_siwx91x_dma_rx_callback : NULL,
 		.user_data = (void *)dev,
 	};
@@ -264,8 +277,13 @@ static uint32_t gspi_siwx91x_fill_desc(const struct gspi_siwx91x_config *cfg,
 	/* Setup max transfer according to requested transaction size.
 	 * Will top if bigger than the maximum transfer size.
 	 */
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+	new_blk_cfg->block_size =
+		MIN(requested_transaction_size, GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE);
+#else
 	new_blk_cfg->block_size =
 		MIN(requested_transaction_size, GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE * dfs);
+#endif
 	return new_blk_cfg->block_size;
 }
 
@@ -408,7 +426,10 @@ static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct sp
 	}
 
 	/* Reset the Rx and Tx FIFO register */
-	cfg->reg->GSPI_FIFO_THRLD = 0;
+	cfg->reg->GSPI_FIFO_THRLD_b.RFIFO_RESET = 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.WFIFO_RESET = 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.RFIFO_RESET = 0;
+	cfg->reg->GSPI_FIFO_THRLD_b.WFIFO_RESET = 0;
 
 	ret = gspi_siwx91x_prepare_dma_transaction(dev, padded_transaction_size);
 	if (ret) {
@@ -417,12 +438,12 @@ static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct sp
 
 	spi_context_cs_control(ctx, true);
 
-	ret = dma_start(dma_dev, data->dma_rx.chan_nb);
+	ret = dma_start(dma_dev, data->dma_tx.chan_nb);
 	if (ret) {
 		return ret;
 	}
 
-	ret = dma_start(dma_dev, data->dma_tx.chan_nb);
+	ret = dma_start(dma_dev, data->dma_rx.chan_nb);
 	if (ret) {
 		return ret;
 	}
@@ -633,12 +654,20 @@ static DEVICE_API(spi, gspi_siwx91x_driver_api) = {
 };
 
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
+#ifdef CONFIG_DMA_SILABS_SIWX91X_GPDMA
+#define SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL_INIT(index, dir)                                       \
+	.dma_##dir = {                                                                             \
+		.chan_nb = DT_INST_DMAS_CELL_BY_NAME(index, dir, channel),                         \
+		.dma_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(index, dir)),                   \
+		.dma_slot = DT_INST_DMAS_CELL_BY_NAME(index, dir, slot),                           \
+	},
+#else
 #define SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL_INIT(index, dir)                                       \
 	.dma_##dir = {                                                                             \
 		.chan_nb = DT_INST_DMAS_CELL_BY_NAME(index, dir, channel),                         \
 		.dma_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(index, dir)),                   \
 	},
-
+#endif
 #define SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL(index, dir)                                            \
 	COND_CODE_1(DT_INST_NODE_HAS_PROP(index, dmas),                                            \
 		    (SPI_SILABS_SIWX91X_GSPI_DMA_CHANNEL_INIT(index, dir)), ())
