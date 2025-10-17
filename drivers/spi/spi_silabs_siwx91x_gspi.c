@@ -46,7 +46,6 @@ struct gspi_siwx91x_config {
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
 	const struct pinctrl_dev_config *pcfg;
-	uint8_t mosi_overrun __aligned(4);
 };
 
 struct gspi_siwx91x_data {
@@ -54,11 +53,6 @@ struct gspi_siwx91x_data {
 	struct gspi_siwx91x_dma_channel dma_rx;
 	struct gspi_siwx91x_dma_channel dma_tx;
 };
-
-#ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
-/* Placeholder buffer for unused RX data */
-static volatile uint8_t empty_buffer __aligned(4);
-#endif
 
 static bool spi_siwx91x_is_dma_enabled_instance(const struct device *dev)
 {
@@ -248,7 +242,7 @@ static uint32_t gspi_siwx91x_fill_desc(const struct gspi_siwx91x_config *cfg,
 			new_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_INCREMENT;
 		} else {
 			/* Null buffer pointer means sending dummy byte */
-			new_blk_cfg->source_address = (uint32_t)&(cfg->mosi_overrun);
+			new_blk_cfg->source_address = (uint32_t)&cfg->reg->GSPI_WRITE_FIFO;
 			new_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 		}
 	} else {
@@ -259,7 +253,7 @@ static uint32_t gspi_siwx91x_fill_desc(const struct gspi_siwx91x_config *cfg,
 			new_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
 		} else {
 			/* Null buffer pointer means rx to null byte */
-			new_blk_cfg->dest_address = (uint32_t)&empty_buffer;
+			new_blk_cfg->dest_address = (uint32_t)&cfg->reg->GSPI_READ_FIFO;
 			new_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 		}
 	}
@@ -409,7 +403,11 @@ static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct sp
 	}
 
 	/* Reset the Rx and Tx FIFO register */
-	cfg->reg->GSPI_FIFO_THRLD = 0;
+	cfg->reg->GSPI_FIFO_THRLD_b.RFIFO_RESET = 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.WFIFO_RESET = 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.RFIFO_RESET = 0;
+	cfg->reg->GSPI_FIFO_THRLD_b.WFIFO_RESET = 0;
+
 
 	ret = gspi_siwx91x_prepare_dma_transaction(dev, padded_transaction_size);
 	if (ret) {
@@ -661,7 +659,6 @@ static DEVICE_API(spi, gspi_siwx91x_driver_api) = {
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(inst)),                             \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_PHA(inst, clocks, clkid),          \
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),                                      \
-		.mosi_overrun = (uint8_t)SPI_MOSI_OVERRUN_DT(inst),                                \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(inst, &gspi_siwx91x_init, NULL, &gspi_data_##inst,                   \
 			      &gspi_config_##inst, POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,          \

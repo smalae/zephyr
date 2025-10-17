@@ -182,6 +182,12 @@ static int siwx91x_gpdma_desc_config(struct siwx19x_gpdma_data *data,
 			cur_desc->chnlCtrlConfig.srcFifoMode = 1;
 		}
 
+		if (block_addr->dest_addr_adj == DMA_ADDR_ADJ_NO_CHANGE &&
+		    block_addr->source_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
+			cur_desc->miscChnlCtrlConfig.memoryFillEn = 1;
+			cur_desc->miscChnlCtrlConfig.memoryOneFill = 0;
+		}
+
 		prev_desc = cur_desc;
 		block_addr = block_addr->next_block;
 	}
