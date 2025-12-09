@@ -241,6 +241,8 @@ static enum clock_control_status siwx91x_clock_get_status(const struct device *d
 
 static int siwx91x_clock_init(const struct device *dev)
 {
+	M4CLK_Type *pCLK = M4CLK;
+
 	SystemCoreClockUpdate();
 
 	sl_si91x_clock_manager_init();
@@ -251,6 +253,8 @@ static int siwx91x_clock_init(const struct device *dev)
 
 	/* Use interface PLL at configured frequency as peripheral clock */
 	sl_si91x_clock_manager_set_pll_freq(INFT_PLL, INTF_PLL_FREQUENCY, PLL_REF_CLK_VAL_XTAL);
+
+	ROMAPI_M4SS_CLK_API->clk_qspi_clk_config(pCLK, QSPI_INTFPLLCLK, 0, 0, 1);
 
 	/* FIXME: Currently the clock consumer use clocks without power on them.
 	 * This should be fixed in drivers. Meanwhile, get the list of required
